@@ -119,10 +119,10 @@ class ChessGPTPlayer(pl.LightningModule, Player):
     def __init__(
         self,
         checkpoint_name: str = "gpt2-stockfish.ckpt",
-        checkpoint_path: str = "checkpoints/gpt2-stockfish",
+        checkpoint_path: str = "checkpoints",
         activation_name: Optional[str] = None,
         activation_coefficient: Optional[float] = None,
-        meta_path: str = "data/stockfish/meta.pkl",
+        meta_path: str = "data/lichess/meta.pkl",
         load_meta: bool = True,
         # dtype: str = "float16",
         device: str = "cpu",
@@ -163,7 +163,7 @@ class ChessGPTPlayer(pl.LightningModule, Player):
 
         self.model = GPT(gptconf)
         self.model.load_state_dict(state_dict)
-
+        print(self.model)
         self.model.to(self.device_type)
         self.model.eval()
         self.save_hyperparameters()
@@ -247,10 +247,11 @@ class ChessGPTPlayer(pl.LightningModule, Player):
         num_samples = 1
         top_k = 200
         max_new_tokens = 10
-
+        # print(f"GAME STATE:{game_state}")
         game_state = self.clean_game_state(game_state)
         game_state = re.sub(r"(\d+\.) ", r"\1", game_state)
         game_state = ";" + game_state
+        # print(f"GAME STATE After:{game_state}")
         start_ids = self.encode(game_state)
 
         x = torch.tensor(start_ids, dtype=torch.long, device=self.device)[
@@ -288,6 +289,7 @@ class ChessGPTPlayer(pl.LightningModule, Player):
             temperature = temperature + random.uniform(-0.01, 0.01) * attempt
             completion = self.get_nanogpt_response(game_state, temperature)
             move = self.get_move_from_response(completion)
+            print(move)
             try:
                 move_uci = board.parse_san(move)
                 if move_uci in board.legal_moves:

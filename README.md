@@ -62,3 +62,5 @@ Ensure you have Python 3.7 or later installed.
 
 - [Karpathy's nanoGPT](https://github.com/karpathy/nanoGPT)
 - [Adam Karvnonen's Hugging Face Dataset](https://huggingface.co/datasets/adamkarvonen/chess_games)
+
+## Add a linespace after player info in prompt.txt

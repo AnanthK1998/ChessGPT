@@ -2,10 +2,12 @@ from dataclasses import asdict
 
 import lightning as pl
 import torch
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import LambdaLR
 
 from src.config import ModelConfig
 from src.network import GPT, GPTConfig
-from src.utils import filter_config, get_metadata
+from src.utils import filter_config, get_learning_rate, get_metadata
 
 
 class GPTChessLightning(pl.LightningModule):

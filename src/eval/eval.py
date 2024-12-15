@@ -370,6 +370,7 @@ def play_game(
                 player_two_failed_to_find_legal_move,
                 illegal_moves_two,
             ) = play_turn(player_two, board, game_state, player_one=False)
+            print(game_state)
             player_two_illegal_moves += illegal_moves_two
             if illegal_moves_two != 0:
                 player_two_legal_moves -= 1
@@ -427,8 +428,8 @@ recording_file = "tmp/determine.csv"
 # player_ones = ["gpt-3.5-turbo-instruct"]
 player_two_recording_name = "stockfish_sweep"
 if __name__ == "__main__":
-    for i in range(11):
-        num_games = 100
+    for i in range(1):
+        num_games = 1
         player_one = ChessGPTPlayer()
         # player_one = StockfishPlayer(skill_level=i * 10, play_time=0.1)
         player_two = StockfishPlayer(skill_level=i, play_time=0.1)
