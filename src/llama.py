@@ -14,11 +14,20 @@ from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.llama.modeling_llama import LlamaSdpaAttention, LlamaMLP,LlamaRMSNorm,LlamaRotaryEmbedding, LlamaModel,LlamaForCausalLM
 from transformers import LlamaModel
-from peft import LoraConfig,get_peft_model
+from peft import LoraConfig,get_peft_model,prepare_model_for_kbit_training
 # from peft.utils import get_peft_model
 from transformers.models.llama.configuration_llama import LlamaConfig
 
 model_id = "meta-llama/Llama-3.2-1B"
+
+from transformers import BitsAndBytesConfig
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
 
 # tokenizer = AutoTokenizer.from_pretrained(model_id)
 # model = AutoModelForCausalLM.from_pretrained(model_id)
@@ -142,7 +151,7 @@ class LlamaCausalLM(pl.LightningModule):
         #     n_params -= self.transformer.wpe.weight.numel()
         return n_params
     
-    def forward(self, idx,past_key_values=None, targets=None):
+    def forward(self, idx,targets=None,past_key_values=None):
         device = idx.device
         b, t = idx.size()
         assert (
@@ -167,13 +176,14 @@ class LlamaCausalLM(pl.LightningModule):
             layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=None,
-                    position_ids=position_ids,
+                    position_ids=position_ids.unsqueeze(0),
                     past_key_value=past_key_values,
                     output_attentions=False,
                 )
+            
             hidden_states = layer_outputs[0]
             if self.config.use_cache:
-                next_decoder_cache = layer_outputs[1]
+                next_decoder_cache = None
 
         hidden_states = self.norm(hidden_states)
 
@@ -182,7 +192,7 @@ class LlamaCausalLM(pl.LightningModule):
             # if we are given some desired targets also calculate the loss
             logits = self.lm_head(hidden_states)
             
-            logits = BaseModelOutputWithPast(logits,next_cache,None,None)
+            # logits = BaseModelOutputWithPast(logits,next_cache,None,None)
             loss = F.cross_entropy(
                 logits.view(-1, logits.size(-1)),
                 targets.view(-1),
@@ -193,7 +203,7 @@ class LlamaCausalLM(pl.LightningModule):
             # note: using list [-1] to preserve the time dim
             logits = self.lm_head(hidden_states[:, [-1], :])
             
-            logits = BaseModelOutputWithPast(logits,next_cache,None,None)
+            # logits = BaseModelOutputWithPast(logits,next_cache,None,None)
             loss = None
 
         return logits, loss
@@ -301,7 +311,9 @@ class LlamaCausalLM(pl.LightningModule):
                 sd[k].copy_(sd_hf[k])
         assert lm_hf.weight.shape == sd['lm_head.weight'].shape
         sd['lm_head.weight'].copy_(lm_hf.weight)
+        del lm_hf,sd_hf,sd_keys_hf
         print("Loading done")
+        
         return model
 
 # model = LlamaCausalLM(config).from_pretrained(model_id)
@@ -311,7 +323,7 @@ class LlamaChessLightning(pl.LightningModule):
     def __init__(self, config,rank):
         super().__init__()
         self.config = config
-        self.model = LlamaCausalLM(config).from_pretrained(model_id)
+        self.model = LlamaCausalLM(config).from_pretrained(model_id) #LlamaForCausalLM(self.config).from_pretrained(model_id,quantization_config=bnb_config) #
         # print(self.model.state_dict().keys())
         lora_config = LoraConfig(
                                 r=rank,
@@ -319,6 +331,7 @@ class LlamaChessLightning(pl.LightningModule):
                                 init_lora_weights="gaussian",
                                 target_modules=["q_proj","k_proj","v_proj","o_proj"],
                             )
+        self.model = prepare_model_for_kbit_training(self.model)
         self.lora_model = get_peft_model(self.model,lora_config)
         print("Reducing number of parameters using LoRA to: %.2fM" % (self.get_num_params() / 1e6,))
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -345,10 +358,12 @@ class LlamaChessLightning(pl.LightningModule):
         return self.config
     
     def forward(self, x, y):
+        # print(x.shape,y.shape)
         return self.model(x, y)
     
     def training_step(self, batch, batch_idx):
         x, y = batch
+        # print(x.shape,y.shape)
         _, loss = self(x, y)
 
         self.log(

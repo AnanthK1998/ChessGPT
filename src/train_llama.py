@@ -48,7 +48,7 @@ def main():
     data_config = DataConfig(
         dataset_path="data/stockfish",
         file_path="stockfish_dataset_blocks.zip",
-        batch_size=64,
+        batch_size=4,
         num_workers=24,
     )
 
@@ -56,7 +56,7 @@ def main():
         max_epochs=50,
         val_check_interval=0.01,
         log_every_n_steps=10,
-        overfit_batches=1,
+        overfit_batches=0,
         checkpoint_path="checkpoints/",
         checkpoint_interval=10000,
         wandb_project="chessgpt",
@@ -68,7 +68,7 @@ def main():
     # torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
     torch.set_float32_matmul_precision("high")
 
-    model = LlamaChessLightning(model_config,16)
+    model = LlamaChessLightning(model_config,8)
     dm = GPTChessDataModule(
         **asdict(data_config), block_size=model_config.intermediate_size
     )
