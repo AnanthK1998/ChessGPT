@@ -30,6 +30,7 @@ def main():
                 num_key_value_heads=8,
                 vocab_size=128256,
                 rope_theta=500000.0,
+                gradient_checkpointing=True,
                 rope_scaling=rope_scaling,
                 max_position_embeddings=131072,
                 bos_token_id=128000,
@@ -48,7 +49,7 @@ def main():
     data_config = DataConfig(
         dataset_path="data/stockfish",
         file_path="stockfish_dataset_blocks.zip",
-        batch_size=4,
+        batch_size=2,
         num_workers=24,
     )
 
@@ -61,14 +62,14 @@ def main():
         checkpoint_interval=10000,
         wandb_project="chessgpt",
         wandb_tags=["runpod_stockfish_run"],
-        gradient_accumulation_steps=10,
+        gradient_accumulation_steps=2,
     )
     torch.manual_seed(1337)
     # torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     # torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
     torch.set_float32_matmul_precision("high")
 
-    model = LlamaChessLightning(model_config,8)
+    model = LlamaChessLightning(model_config,4)
     dm = GPTChessDataModule(
         **asdict(data_config), block_size=model_config.intermediate_size
     )
@@ -96,6 +97,8 @@ def main():
         logger=wandb_logger,
         callbacks=[ckpt_callback],
         precision="bf16-mixed",
+
+        enable_checkpointing=True
     )
     trainer.fit(
         model,

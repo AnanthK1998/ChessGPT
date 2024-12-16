@@ -50,41 +50,41 @@ def main():
     # torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     # torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
     torch.set_float32_matmul_precision("high")
+    print(model_config.vocab_size)
+    # model = GPTChessLightning(model_config)
+    # dm = GPTChessDataModule(
+    #     **asdict(data_config), block_size=model_config.block_size
+    # )
 
-    model = GPTChessLightning(model_config)
-    dm = GPTChessDataModule(
-        **asdict(data_config), block_size=model_config.block_size
-    )
+    # ckpt_callback = ModelCheckpoint(
+    #     save_last=True,
+    #     dirpath=train_config.checkpoint_path,
+    #     every_n_train_steps=train_config.checkpoint_interval,
+    #     verbose=True,
+    # )
 
-    ckpt_callback = ModelCheckpoint(
-        save_last=True,
-        dirpath=train_config.checkpoint_path,
-        every_n_train_steps=train_config.checkpoint_interval,
-        verbose=True,
-    )
+    # wandb_logger = WandbLogger(
+    #     project=train_config.wandb_project,
+    #     tags=train_config.wandb_tags,
+    #     # resume="must",
+    #     # id="exfy7bt4",
+    # )
 
-    wandb_logger = WandbLogger(
-        project=train_config.wandb_project,
-        tags=train_config.wandb_tags,
-        # resume="must",
-        # id="exfy7bt4",
-    )
-
-    trainer = pl.Trainer(
-        max_epochs=train_config.max_epochs,
-        log_every_n_steps=train_config.log_every_n_steps,
-        val_check_interval=train_config.val_check_interval,
-        overfit_batches=train_config.overfit_batches,
-        accumulate_grad_batches=train_config.gradient_accumulation_steps,
-        logger=wandb_logger,
-        callbacks=[ckpt_callback],
-        precision="bf16-mixed",
-    )
-    trainer.fit(
-        model,
-        datamodule=dm,
-        # ckpt_path="/opt/joao/repos/xp/chessgpt/checkpoints/last-v4.ckpt",
-    )
+    # trainer = pl.Trainer(
+    #     max_epochs=train_config.max_epochs,
+    #     log_every_n_steps=train_config.log_every_n_steps,
+    #     val_check_interval=train_config.val_check_interval,
+    #     overfit_batches=train_config.overfit_batches,
+    #     accumulate_grad_batches=train_config.gradient_accumulation_steps,
+    #     logger=wandb_logger,
+    #     callbacks=[ckpt_callback],
+    #     precision="bf16-mixed",
+    # )
+    # trainer.fit(
+    #     model,
+    #     datamodule=dm,
+    #     # ckpt_path="/opt/joao/repos/xp/chessgpt/checkpoints/last-v4.ckpt",
+    # )
 
 
 if __name__ == "__main__":

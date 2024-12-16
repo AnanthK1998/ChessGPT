@@ -17,7 +17,8 @@ from transformers import LlamaModel
 from peft import LoraConfig,get_peft_model,prepare_model_for_kbit_training
 # from peft.utils import get_peft_model
 from transformers.models.llama.configuration_llama import LlamaConfig
-
+from functools import partial
+from torch.utils.checkpoint import checkpoint
 model_id = "meta-llama/Llama-3.2-1B"
 
 from transformers import BitsAndBytesConfig
@@ -110,7 +111,7 @@ class LlamaDecoderLayer(nn.Module):
 
         return outputs
     
-class LlamaCausalLM(pl.LightningModule):
+class LlamaCausalLM(nn.Module):
     def __init__(self,config):
         super().__init__()
         self.config = config
@@ -173,6 +174,9 @@ class LlamaCausalLM(pl.LightningModule):
         # position embeddings of shape (t, n_embd)
         hidden_states =inputs_embeds
         for decoder_layer in self.layers:
+            gradient_checkpointing_kwargs = {"use_reentrant": True}
+
+            gradient_checkpointing_func = partial(checkpoint, **gradient_checkpointing_kwargs)
             layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=None,
@@ -208,41 +212,7 @@ class LlamaCausalLM(pl.LightningModule):
 
         return logits, loss
 
-    def configure_optimizers(
-        self, weight_decay, learning_rate, betas, device_type
-    ):
-        # start with all of the candidate parameters
-        param_dict = {pn: p for pn, p in self.named_parameters()}
-        # filter out those that do not require grad
-        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
-        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {"params": decay_params, "weight_decay": weight_decay},
-            {"params": nodecay_params, "weight_decay": 0.0},
-        ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(
-            f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters"
-        )
-        print(
-            f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters"
-        )
-        # Create AdamW optimizer and use the fused version if it is available
-        fused_available = (
-            "fused" in inspect.signature(torch.optim.AdamW).parameters
-        )
-        use_fused = fused_available and device_type == "cuda"
-        extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(
-            optim_groups, lr=learning_rate, betas=betas, **extra_args
-        )
-        print(f"using fused AdamW: {use_fused}")
-
-        return optimizer
+    
     
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
@@ -278,16 +248,17 @@ class LlamaCausalLM(pl.LightningModule):
     def from_pretrained(self,id):
         print("loading weights from pretrained gpt: %s" % id)
         model = LlamaCausalLM(self.config)
-        hf = LlamaForCausalLM(self.config).from_pretrained(id)
-        model_hf = hf.model 
-        lm_hf = hf.lm_head
-        sd_lm_hf = lm_hf #The retards at META decided to create another additional class for the MLP head. Doing this to combine both of them
+        hf = LlamaModel(self.config).from_pretrained(id)
+        # model_hf = hf.model 
+        # lm_hf = hf.lm_head
+        # sd_lm_hf = lm_hf #The retards at META decided to create another additional class for the MLP head. Doing this to combine both of them
         
         # sd_lm_hf_keys = sd_lm_hf.keys()
-        del hf
+        # del hf
         sd = model.state_dict()
         sd_keys = sd.keys()
-        sd_hf = model_hf.state_dict()
+        sd_hf = hf.state_dict()
+        # sd_hf = model_hf.state_dict()
         # copy while ensuring all of the parameters are aligned and match in names and shapes
         sd_keys_hf = sd_hf.keys()
         
@@ -306,17 +277,18 @@ class LlamaCausalLM(pl.LightningModule):
         for k in sd_keys_hf:
             
             # vanilla copy over the other parameters
+            
             assert sd_hf[k].shape == sd[k].shape
             with torch.no_grad():
                 sd[k].copy_(sd_hf[k])
-        assert lm_hf.weight.shape == sd['lm_head.weight'].shape
-        sd['lm_head.weight'].copy_(lm_hf.weight)
-        del lm_hf,sd_hf,sd_keys_hf
+        # assert lm_hf.weight.shape == sd['lm_head.weight'].shape
+        # sd['lm_head.weight'].copy_(lm_hf.weight)
+        # del lm_hf,sd_hf,sd_keys_hf
         print("Loading done")
         
         return model
 
-# model = LlamaCausalLM(config).from_pretrained(model_id)
+model = LlamaCausalLM(config).from_pretrained(model_id)
 
 
 class LlamaChessLightning(pl.LightningModule):
@@ -359,7 +331,7 @@ class LlamaChessLightning(pl.LightningModule):
     
     def forward(self, x, y):
         # print(x.shape,y.shape)
-        return self.model(x, y)
+        return self.model(x, labels=y)
     
     def training_step(self, batch, batch_idx):
         x, y = batch
